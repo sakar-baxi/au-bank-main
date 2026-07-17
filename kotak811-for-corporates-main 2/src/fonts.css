@@ -1,0 +1,9 @@
+/* Optional font face if you self-host later; by default system stack is used via tokens */
+/* @font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/path/to/font.woff2") format("woff2");
+  font-display: swap;
+  font-weight: 400 700;
+} */
+
+
