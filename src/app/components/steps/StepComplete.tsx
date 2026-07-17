@@ -18,12 +18,14 @@ import { Button } from "@/app/components/ui/button";
 import { cn } from "@/lib/utils";
 import StepCard from "@/app/components/layout/StepCard";
 import { PreApprovedOfferModal } from "@/app/components/shared/PreApprovedOfferModal";
+import { AgentBanner, JourneyTypeBadge } from "@/app/components/shared/JourneyChrome";
 
 export default function StepComplete() {
-  const { formData, setBottomBarContent } = useJourney();
+  const { formData, setBottomBarContent, journeyType, setShowDashboard, resetJourney } = useJourney();
   const { config } = useBranding();
   const [isApiLoading, setIsApiLoading] = useState(true);
   const completeLoadingMs = 1500;
+  const isEtbNk = journeyType === "etb-nk";
 
   useEffect(() => {
     trackEvent("journey_completed");
@@ -32,6 +34,15 @@ export default function StepComplete() {
     const timer = setTimeout(() => setIsApiLoading(false), completeLoadingMs);
     return () => clearTimeout(timer);
   }, [setBottomBarContent]);
+
+  const handleReturnHome = () => {
+    trackEvent("return_home_click", { journeyType: journeyType || "unknown" });
+    resetJourney();
+    setShowDashboard(true);
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/journey")) {
+      window.location.href = "/";
+    }
+  };
 
   // Salary account cross-sell offers
   const offers = [
@@ -71,6 +82,17 @@ export default function StepComplete() {
     <>
     <StepCard maxWidth="6xl" className="!p-0 overflow-hidden">
       <div className="overflow-hidden">
+        {isEtbNk && (
+          <div className="px-6 pt-5 md:px-8 space-y-3">
+            <div className="flex justify-end">
+              <JourneyTypeBadge label="Salary account (ETB with KYC)" />
+            </div>
+            <AgentBanner variant="info">
+              Congratulations — your journey steps are finished. Review the summary below for what happens next.
+            </AgentBanner>
+          </div>
+        )}
+
         {/* Hero - depth, warmth, visual interest */}
         <div className="relative px-6 pt-12 pb-10 md:pt-16 md:pb-14 overflow-hidden">
           {/* Layered background */}
@@ -98,11 +120,13 @@ export default function StepComplete() {
               </div>
             </div>
 
-            <h1 className="mt-8 text-2xl md:text-4xl font-bold text-slate-900 tracking-tight">
+            <h1 className="mt-8 text-2xl md:text-4xl font-bold tracking-tight" style={{ color: "var(--primary-bank)" }}>
               Account Active!
             </h1>
             <p className="mt-3 text-slate-600 text-base md:text-lg max-w-md leading-relaxed">
-              Welcome aboard, {userName}. Your banking journey starts now.
+              {isEtbNk
+                ? "Welcome aboard. Your banking journey starts now."
+                : `Welcome aboard, ${userName}. Your banking journey starts now.`}
             </p>
           </div>
         </div>
@@ -123,7 +147,7 @@ export default function StepComplete() {
               </div>
               <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
                 <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Account Number</p>
-                <p className="mt-1.5 text-base font-semibold text-slate-900 tabular-nums">{formData.accountNumber ?? "XXXX XXXX 1234"}</p>
+                <p className="mt-1.5 text-base font-semibold text-slate-900 tabular-nums">{formData.accountNumber ?? "XXXXXXXX1234"}</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
                 <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Branch Name</p>
@@ -143,7 +167,7 @@ export default function StepComplete() {
             </div>
           </div>
 
-          {/* Pre-approved - exciting, visual, clickable */}
+          {/* Pre-approved offers & other journeys */}
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div className="px-5 py-4 md:px-6 md:py-5 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-orange-50">
               <div className="flex flex-wrap items-center gap-2">
@@ -217,6 +241,18 @@ export default function StepComplete() {
                   onClick={() => trackEvent("cross_sell_click", { offer: "view_passbook" })}
                 >
                   View Passbook
+                </Button>
+              </div>
+
+              <div className="mt-4 flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleReturnHome}
+                  className="h-11 px-8 font-semibold rounded-xl border-slate-200"
+                >
+                  <Home className="w-4 h-4 mr-2" />
+                  Return Home
                 </Button>
               </div>
             </div>

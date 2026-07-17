@@ -6,6 +6,7 @@ import { useBranding } from "@/app/context/BrandingContext";
 import { useJourneyConfig } from "@/app/context/JourneyConfigContext";
 import { useJourney } from "@/app/context/JourneyContext";
 import JourneyProgressBar from "./JourneyProgressBar";
+import TasksSidebar from "./TasksSidebar";
 import WhitelabelModal from "../shared/WhitelabelModal";
 import { cn } from "@/lib/utils";
 import { Button } from "@/app/components/ui/button";
@@ -21,6 +22,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     const [showViewSwitcher, setShowViewSwitcher] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
+    const useTasksSidebar = journeyType === "etb-nk";
+
     const showBackButton = useMemo(() => {
         if (showDashboard || currentStepIndex <= 0) return false;
         const currentStepId = journeySteps[currentStepIndex]?.id;
@@ -31,11 +34,12 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     
     const showStepper = useMemo(() => {
         if (showDashboard || viewMode === "mobile") return false;
+        if (useTasksSidebar) return false; // ETB-NK uses Tasks rail instead of top progress bar
         const currentStepId = journeySteps[currentStepIndex]?.id || "";
         // Hide stepper for all DAV steps (they all start with av)
         if (currentStepId.includes(":av")) return false;
         return true;
-    }, [showDashboard, currentStepIndex, journeySteps, viewMode]);
+    }, [showDashboard, currentStepIndex, journeySteps, viewMode, useTasksSidebar]);
 
     const handleScroll = useCallback(() => {
         const el = scrollRef.current;
@@ -255,15 +259,19 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                     {viewMode === 'desktop' && (
                         <div
                             className={cn(
-                                "desktop-view w-full flex flex-col transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 relative z-10",
+                                "desktop-view w-full flex transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 relative z-10",
                                 showDashboard
                                     ? (config.modules.headerSize === 'large'
                                         ? "max-w-full xl:max-w-[1700px] 2xl:max-w-[1800px]"
                                         : "max-w-full lg:max-w-[1500px]")
-                                    : "w-full max-w-[1400px] mx-auto px-2 sm:px-4"
+                                    : "w-full max-w-[1400px] mx-auto px-2 sm:px-4",
+                                useTasksSidebar && !showDashboard ? "flex-row items-start gap-5" : "flex-col"
                             )}
                         >
-                            {children}
+                            <div className={cn(useTasksSidebar && !showDashboard ? "flex-1 min-w-0" : "w-full")}>
+                                {children}
+                            </div>
+                            {useTasksSidebar && !showDashboard && <TasksSidebar />}
                         </div>
                     )}
                 </div>

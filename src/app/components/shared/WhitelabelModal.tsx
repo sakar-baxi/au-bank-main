@@ -470,10 +470,9 @@ export default function WhitelabelModal({ isOpen, onClose }: WhitelabelModalProp
 
   const loadDefaultEtbNkJourney = () => {
     const steps: StepConfig[] = [
-      { id: "etb-nk-welcome", stepKind: "welcome", title: journeyConfig.stepTitles.welcome, fields: getFieldsForStepKind("welcome"), order: 0 },
-      { id: "etb-nk-autoConversion", stepKind: "autoConversion", title: journeyConfig.stepTitles.autoConversion, fields: getFieldsForStepKind("autoConversion"), order: 1 },
-      { id: "etb-nk-profile", stepKind: "profileDetails", title: journeyConfig.stepTitles.profileDetails, fields: getFieldsForStepKind("profileDetails"), order: 2 },
-      { id: "etb-nk-complete", stepKind: "complete", title: journeyConfig.stepTitles.complete, fields: [], order: 3 },
+      { id: "etb-nk-income", stepKind: "etbIncomeDeclarations", title: journeyConfig.stepTitles.etbIncomeDeclarations || "Income & Declarations", fields: getFieldsForStepKind("etbIncomeDeclarations"), order: 0 },
+      { id: "etb-nk-verify", stepKind: "conversionVerification", title: journeyConfig.stepTitles.conversionVerification || "Verification", fields: getFieldsForStepKind("conversionVerification"), order: 1 },
+      { id: "etb-nk-complete", stepKind: "complete", title: journeyConfig.stepTitles.complete || "Success", fields: [], order: 2 },
     ];
     updateSteps(steps);
     setExpandedStepIndex(null);

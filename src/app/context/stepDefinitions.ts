@@ -179,13 +179,14 @@ export const ALL_STEPS: Record<string, Step> = {
     "complete",
   ]),
   ...addJourneySteps("etb-nk", [
+    "etbIncomeDeclarations",
+    "conversionVerification",
+    "complete",
+    // Kept for legacy resume / physical branch compatibility
     "welcome",
     "kycChoice",
     "ekycHandler",
     "physicalKyc",
-    "etbIncomeDeclarations",
-    "conversionVerification",
-    "complete",
   ]),
   ...addJourneySteps("etb", [
     "welcome",

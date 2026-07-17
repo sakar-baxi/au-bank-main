@@ -111,9 +111,6 @@ const getInitialStepsForJourney = (
       break;
     case "etb-nk":
       stepIds = [
-        makeJourneyStepId("etb-nk", "welcome"),
-        makeJourneyStepId("etb-nk", "ekycHandler"),
-        makeJourneyStepId("etb-nk", "kycChoice"),
         makeJourneyStepId("etb-nk", "etbIncomeDeclarations"),
         makeJourneyStepId("etb-nk", "conversionVerification"),
         makeJourneyStepId("etb-nk", "complete"),
@@ -623,10 +620,18 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
               const upgraded = getInitialStepsForJourney("etb-nk", journeyConfig);
               const hasBase = (baseId: string) =>
                 parsedSteps.some((step) => step?.id === baseId || String(step?.id || "").endsWith(`:${baseId}`));
-              const needsUpgrade = !hasBase("etbIncomeDeclarations");
+              // Force the screenshot flow: Income → Verification → Success (drop welcome/eKYC/KYC choice).
+              const needsUpgrade =
+                !hasBase("etbIncomeDeclarations") ||
+                !hasBase("conversionVerification") ||
+                hasBase("welcome") ||
+                hasBase("ekycHandler") ||
+                hasBase("kycChoice") ||
+                parsedSteps.length !== upgraded.length;
               if (needsUpgrade) {
                 const currentId = parsedSteps[parsedIndex]?.id;
                 upgradedIndex = currentId ? upgraded.findIndex((step) => step.id === currentId) : -1;
+                if (upgradedIndex < 0) upgradedIndex = 0;
                 parsedSteps = upgraded;
               }
             }

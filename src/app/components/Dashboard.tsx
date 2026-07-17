@@ -200,12 +200,13 @@ const CORPORATES = SEED_CORPORATES;
 
 // ─── Pre-populate Dummy Salary Account Journeys for Demo ───
 if (typeof window !== "undefined") {
-    const PRE_POPULATED_KEY = "au_salary_journeys_populated_v1";
+    const PRE_POPULATED_KEY = "au_salary_journeys_populated_v2";
     if (!localStorage.getItem(PRE_POPULATED_KEY)) {
         // Remove personal-loan titles left over from earlier demos
         purgeLoanStatusesFromDirectoryStorage();
-        // Drop prior MMFSL seed flag so we don't leave mixed seeds
+        // Drop prior seed flags so we don't leave mixed seeds
         localStorage.removeItem("mmfsl_dummy_journeys_populated_v2");
+        localStorage.removeItem("au_salary_journeys_populated_v1");
 
         const seedEmployees = getSeedEmployees();
         // 8 Completed - starting from index 10 to keep top slots clear for live demos
@@ -233,8 +234,8 @@ if (typeof window !== "undefined") {
             { id: "ntb:reviewApplication", title: "Final Verification" },
         ];
         const etbNkProgressSteps = [
-            { id: "etb-nk:ekycHandler", title: "e-KYC Verification" },
-            { id: "etb-nk:kycChoice", title: "Select KYC" },
+            { id: "etb-nk:etbIncomeDeclarations", title: "Income & Declarations" },
+            { id: "etb-nk:conversionVerification", title: "Verification" },
             { id: "etb-nk:etbIncomeDeclarations", title: "Income & Declarations" },
         ];
         const etbProgressSteps = [
