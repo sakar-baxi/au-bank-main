@@ -7,6 +7,7 @@ import { AddConnectionJourney, type ConnectionFlowCompletionPayload } from "@/ap
 import EmployeePortalContent from "@/app/components/EmployeePortalContent";
 import type { EmployeeHubJourneyRecord } from "@/lib/employeeJourneyHub";
 import { openEmployeeLoanJourneyInNewTab, isLoanJourneyRouteType } from "@/lib/employeeJourneyHub";
+import { stashPendingInvite } from "@/lib/pendingInvite";
 import { usePortal } from "@/app/context/PortalContext";
 import {
     LayoutGrid,
@@ -189,19 +190,27 @@ const CONNECTIONS_PER_PAGE = 10;
 
 import { getSeedEmployees, SEED_CORPORATES } from "@/lib/seedEmployees";
 import { runSync, getSyncTimestamp } from "@/lib/hrmsSync";
+import {
+    purgeLoanStatusesFromDirectoryStorage,
+    resolveSalaryDirectoryStatus,
+} from "@/lib/salaryAccountStatus";
 
     // Max 3 corporates for seed data; new corporates added via onboarding get different employee records
 const CORPORATES = SEED_CORPORATES;
 
-// ─── Pre-populate Dummy Journeys for Demo ───
+// ─── Pre-populate Dummy Salary Account Journeys for Demo ───
 if (typeof window !== "undefined") {
-    const PRE_POPULATED_KEY = "mmfsl_dummy_journeys_populated_v2";
+    const PRE_POPULATED_KEY = "au_salary_journeys_populated_v1";
     if (!localStorage.getItem(PRE_POPULATED_KEY)) {
+        // Remove personal-loan titles left over from earlier demos
+        purgeLoanStatusesFromDirectoryStorage();
+        // Drop prior MMFSL seed flag so we don't leave mixed seeds
+        localStorage.removeItem("mmfsl_dummy_journeys_populated_v2");
+
         const seedEmployees = getSeedEmployees();
         // 8 Completed - starting from index 10 to keep top slots clear for live demos
         for (let i = 10; i < 18; i++) {
             const emp = seedEmployees[i];
-            // Journey type is already on the seed employee; derive the step ID accordingly
             const jt = emp.journey === "ntb" || emp.journey === "ntb-no-parents" ? "ntb"
                       : emp.journey === "etb-nk" ? "etb-nk"
                       : "etb";
@@ -217,23 +226,29 @@ if (typeof window !== "undefined") {
             };
             localStorage.setItem(`employeeJourneyStatus_${emp.id}`, JSON.stringify(status));
         }
-        // 6 In Progress - starting from index 4 to 9
+        // 6 In Progress - salary account steps only
         const ntbProgressSteps = [
             { id: "ntb:ekycHandler", title: "e-KYC Verification" },
             { id: "ntb:profileDetails", title: "Your Details" },
             { id: "ntb:reviewApplication", title: "Final Verification" },
         ];
+        const etbNkProgressSteps = [
+            { id: "etb-nk:ekycHandler", title: "e-KYC Verification" },
+            { id: "etb-nk:kycChoice", title: "Select KYC" },
+            { id: "etb-nk:etbIncomeDeclarations", title: "Income & Declarations" },
+        ];
         const etbProgressSteps = [
             { id: "etb:autoConversion", title: "Account Conversion" },
             { id: "etb:etbIncomeDeclarations", title: "Income & Declarations" },
-            { id: "etb-nk:etbIncomeDeclarations", title: "Income & Declarations" },
+            { id: "etb:conversionVerification", title: "Verification" },
         ];
         for (let i = 4; i < 10; i++) {
             const emp = seedEmployees[i];
             const jt = emp.journey === "ntb" || emp.journey === "ntb-no-parents" ? "ntb"
                       : emp.journey === "etb-nk" ? "etb-nk"
                       : "etb";
-            const stepsPool = jt === "ntb" ? ntbProgressSteps : etbProgressSteps;
+            const stepsPool =
+                jt === "ntb" ? ntbProgressSteps : jt === "etb-nk" ? etbNkProgressSteps : etbProgressSteps;
             const step = stepsPool[(i - 4) % stepsPool.length];
             const status = {
                 status: "in_progress",
@@ -247,12 +262,11 @@ if (typeof window !== "undefined") {
             };
             localStorage.setItem(`employeeJourneyStatus_${emp.id}`, JSON.stringify(status));
         }
-        // 5 Invited (we'll handle this in the component's initial state if possible, 
-        // but for now let's just mark them as invited in a separate localStorage key 
-        // if we had one, but invitedEmployeeIds is usually local state. 
-        // We can use a special status for them or just rely on the count.)
-        
+
         localStorage.setItem(PRE_POPULATED_KEY, "true");
+    } else {
+        // Always scrub loan statuses that may have been written after seeding
+        purgeLoanStatusesFromDirectoryStorage();
     }
 }
 
@@ -499,14 +513,16 @@ export default function Dashboard() {
             return employees[0]?.id ?? null;
         }
     });
-    // Read all employee journey statuses from localStorage
+    // Read salary-account journey statuses for RM Employee Directory
     const refreshStatuses = React.useCallback(() => {
         const statuses: Record<string, JourneyStatus> = {};
         employees.forEach((emp) => {
             try {
                 const raw = localStorage.getItem(`employeeJourneyStatus_${emp.id}`);
-                if (raw) {
-                    statuses[emp.id] = JSON.parse(raw);
+                const parsed = raw ? JSON.parse(raw) : null;
+                const resolved = resolveSalaryDirectoryStatus(emp.id, parsed);
+                if (resolved) {
+                    statuses[emp.id] = resolved as unknown as JourneyStatus;
                 }
             } catch { /* ignore parse errors */ }
         });
@@ -524,7 +540,10 @@ export default function Dashboard() {
     React.useEffect(() => {
         refreshStatuses();
         const onStorage = (e: StorageEvent) => {
-            if (e.key?.startsWith("employeeJourneyStatus_")) {
+            if (
+                e.key?.startsWith("employeeJourneyStatus_") ||
+                e.key?.startsWith("salaryJourneyBundle_")
+            ) {
                 refreshStatuses();
             }
             if (e.key === RM_INVITED_EMPLOYEE_IDS_KEY) {
@@ -654,8 +673,6 @@ export default function Dashboard() {
                 bankAccountNumber: emp.bankAccountNumber,
                 bankIfscCode: emp.bankIfscCode,
                 bankBranch: emp.bankBranch,
-                // ETB-NK: existing customers with KYC are redirected to AU's netbanking portal
-                ...(resolvedJourneyType === "etb-nk" ? { redirectToBankSite: true } : {}),
             },
         };
     };
@@ -676,8 +693,10 @@ export default function Dashboard() {
             keysToRemove.forEach((k) => localStorage.removeItem(k));
         } catch { /* ignore */ }
         const invite = buildPrefilledInvite(emp);
-        localStorage.setItem("pendingInvite", JSON.stringify(invite));
-        window.open("/", "_blank");
+        stashPendingInvite(invite);
+        // Open the salary-account journey URL (same pattern as loan invites) so session
+        // restore cannot fall through to the personal-loan default on "/".
+        window.open(`/journey/${invite.journeyType}`, "_blank");
     };
 
     /** Retrigger journey from where employee left off (FTNR case management). */
@@ -686,7 +705,7 @@ export default function Dashboard() {
         const startStepId = status?.status === "in_progress" ? status.currentStepId : undefined;
         try {
             const invite = { ...buildPrefilledInvite(emp), startStepId };
-            localStorage.setItem("pendingInvite", JSON.stringify(invite));
+            stashPendingInvite(invite);
             window.open("/journey/resume", "_blank");
         } catch { /* ignore */ }
     };
@@ -695,8 +714,8 @@ export default function Dashboard() {
     const handleStartEmployeeSalaryJourney = (emp: Employee) => {
         try {
             const invite = buildPrefilledInvite(emp);
-            localStorage.setItem("pendingInvite", JSON.stringify(invite));
-            window.open("/", "_blank");
+            stashPendingInvite(invite);
+            window.open(`/journey/${invite.journeyType}`, "_blank");
         } catch { /* ignore */ }
     };
 
@@ -708,7 +727,7 @@ export default function Dashboard() {
             const status = employeeStatuses[fullEmp.id] as (JourneyStatus & { currentStepId?: string }) | undefined;
             const stepId = startStepId ?? (status?.status === "in_progress" ? status.currentStepId : undefined);
             const invite = { ...buildPrefilledInvite(fullEmp), startStepId: stepId };
-            localStorage.setItem("pendingInvite", JSON.stringify(invite));
+            stashPendingInvite(invite);
             window.open("/journey/resume", "_blank");
         } catch { /* ignore */ }
     };
@@ -1010,7 +1029,7 @@ export default function Dashboard() {
                         <div className="relative">
                             <Bell className="w-5 h-5 text-[#6B7280]" />
                             {(portalMode !== "employee" || employeeRmUnread > 0) && (
-                                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+                                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-[#c84417] rounded-full text-[10px] font-bold text-white flex items-center justify-center">
                                     {portalMode === "employee" ? (employeeRmUnread > 9 ? "9+" : employeeRmUnread) : 3}
                                 </span>
                             )}
@@ -1115,7 +1134,7 @@ export default function Dashboard() {
                         >
                             <Bell className="w-5 h-5" />
                             {(portalMode !== "employee" || employeeRmUnread > 0) && (
-                                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1">
+                                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-[#c84417] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1">
                                     {portalMode === "employee" ? (employeeRmUnread > 9 ? "9+" : employeeRmUnread) : 4}
                                 </span>
                             )}

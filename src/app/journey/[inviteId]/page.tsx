@@ -10,8 +10,21 @@ import StepError from "@/app/components/steps/StepError";
 import { AnimatePresence } from "framer-motion";
 import type { JourneyType } from "@/app/context/stepDefinitions";
 import { readLoanResumeBundle } from "@/lib/employeeJourneyHub";
+import {
+  consumePendingInviteFromLocalStorage,
+  readStashedInvite,
+} from "@/lib/pendingInvite";
 
 const PL_LIKE_INVITE_IDS = ["personal-loan", "auto-loan", "education-loan"] as const;
+const SALARY_INVITE_IDS = ["ntb", "ntb-conversion", "etb-nk", "etb"] as const;
+
+function isPlLikeInviteId(id: string): id is (typeof PL_LIKE_INVITE_IDS)[number] {
+  return (PL_LIKE_INVITE_IDS as readonly string[]).includes(id);
+}
+
+function isSalaryInviteId(id: string): id is (typeof SALARY_INVITE_IDS)[number] {
+  return (SALARY_INVITE_IDS as readonly string[]).includes(id);
+}
 
 function clearHdfcSessionStorage() {
   localStorage.removeItem("hdfcJourney_journeyType");
@@ -19,6 +32,11 @@ function clearHdfcSessionStorage() {
   localStorage.removeItem("hdfcJourney_journeySteps");
   localStorage.removeItem("hdfcJourney_formData");
   localStorage.removeItem("hdfcJourney_stepHistory");
+  localStorage.removeItem("hdfcJourney_userType");
+  localStorage.removeItem("hdfcJourney_prefilledData");
+  localStorage.removeItem("hdfcJourney_baselineData");
+  localStorage.removeItem("hdfcJourney_changedFields");
+  localStorage.removeItem("hdfcJourney_branchStepId");
 }
 
 export default function JourneyInvitePage() {
@@ -31,31 +49,33 @@ export default function JourneyInvitePage() {
     currentStepIndex,
     currentBranchComponent,
     startJourney,
-    journeyType,
   } = useJourney();
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
-  const [redirectToBankSite, setRedirectToBankSite] = useState(false);
   const startedRef = useRef(false);
 
   useEffect(() => {
     if (!inviteId || startedRef.current) return;
 
-    // Force clear any stale journey state if we're explicitly on the personal-loan or address-verification URL
-    if (PL_LIKE_INVITE_IDS.includes(inviteId as (typeof PL_LIKE_INVITE_IDS)[number]) || inviteId === "address-verification") {
+    const isKnownJourneyUrl =
+      isPlLikeInviteId(inviteId) ||
+      isSalaryInviteId(inviteId) ||
+      inviteId === "address-verification";
+
+    // Clear stale session when opening an explicit journey URL so an old personal-loan
+    // session cannot override a salary-account invite.
+    if (isKnownJourneyUrl) {
       clearHdfcSessionStorage();
     }
 
     try {
-      const raw = localStorage.getItem("pendingInvite");
-      
+      const raw = readStashedInvite();
+
       if (!raw) {
-        if (PL_LIKE_INVITE_IDS.includes(inviteId as (typeof PL_LIKE_INVITE_IDS)[number]) || inviteId === "address-verification") {
+        if (isKnownJourneyUrl) {
           startedRef.current = true;
-          // IMPORTANT: explicitly pass the type to startJourney
-          const type = inviteId as JourneyType;
-          startJourney(type);
+          startJourney(inviteId as JourneyType);
           setIsLoading(false);
           return;
         }
@@ -75,15 +95,18 @@ export default function JourneyInvitePage() {
         resumeFromSavedBundle?: boolean;
       };
 
-      localStorage.removeItem("pendingInvite");
+      consumePendingInviteFromLocalStorage();
       startedRef.current = true;
 
-      // ETB-NK netbanking variant: show AU redirect page instead of running journey steps
-      if (invite.prefilledData?.redirectToBankSite) {
-        setRedirectToBankSite(true);
-        setIsLoading(false);
-        return;
-      }
+      // Prefer the journey type from the URL for salary / loan routes so a stale
+      // pendingInvite (e.g. personal-loan) cannot hijack a salary invite tab.
+      const journeyType: JourneyType = isSalaryInviteId(inviteId) || isPlLikeInviteId(inviteId)
+        ? (inviteId as JourneyType)
+        : invite.journeyType;
+
+      const prefilledData = { ...(invite.prefilledData || {}) };
+      // Always run the in-app salary account journey from RM Invite (no netbanking redirect).
+      delete prefilledData.redirectToBankSite;
 
       const prefilled = invite.employee
         ? {
@@ -92,9 +115,9 @@ export default function JourneyInvitePage() {
             email: invite.employee.email,
             mobileNumber: invite.employee.phone,
             phone: invite.employee.phone,
-            ...(invite.prefilledData || {}),
+            ...prefilledData,
           }
-        : { ...(invite.prefilledData || {}) };
+        : { ...prefilledData };
 
       const empId = typeof prefilled.employeeId === "string" ? prefilled.employeeId : undefined;
       const loanKinds: JourneyType[] = ["personal-loan", "auto-loan", "education-loan"];
@@ -102,15 +125,15 @@ export default function JourneyInvitePage() {
       if (
         invite.resumeFromSavedBundle &&
         empId &&
-        loanKinds.includes(invite.journeyType)
+        loanKinds.includes(journeyType)
       ) {
         loanBundle = readLoanResumeBundle(
           empId,
-          invite.journeyType as "personal-loan" | "auto-loan" | "education-loan"
+          journeyType as "personal-loan" | "auto-loan" | "education-loan"
         );
       }
 
-      startJourney(invite.journeyType, prefilled, invite.startStepId, loanBundle);
+      startJourney(journeyType, prefilled, invite.startStepId, loanBundle);
     } catch {
       setLoadError({
         title: "Something went wrong",
@@ -149,14 +172,6 @@ export default function JourneyInvitePage() {
             </div>
           </div>
         </AgentLayout>
-      </div>
-    );
-  }
-
-  if (redirectToBankSite) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <p className="text-sm text-slate-600">Redirecting to AU Bank&apos;s site</p>
       </div>
     );
   }

@@ -7,6 +7,10 @@ import Dashboard from "@/app/components/Dashboard";
 import AgentLayout from "@/app/components/layout/AgentLayout";
 import { AnimatePresence } from "framer-motion";
 import React, { useEffect, useRef, Suspense } from "react";
+import {
+  consumePendingInviteFromLocalStorage,
+  readStashedInvite,
+} from "@/lib/pendingInvite";
 
 function HomeContent() {
   const {
@@ -21,42 +25,25 @@ function HomeContent() {
 
   const bootedRef = useRef(false);
 
-  // Read synchronously on first render so redirect takes effect before dashboard paints.
-  const [redirectToBankSite, setRedirectToBankSite] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const raw = localStorage.getItem("pendingInvite");
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      const merged = parsed.prefilledData
-        ? { ...(parsed.employee || {}), ...parsed.prefilledData }
-        : parsed.prefilled || {};
-      return !!merged.redirectToBankSite;
-    } catch {
-      return false;
-    }
-  });
-
-  // If this tab was opened via Invite, read the pending invite and start the journey
+  // If this tab was opened via Invite on "/", read the pending invite and start the journey.
+  // Prefer /journey/{type} from RM Invite; this remains a fallback.
   useEffect(() => {
     if (bootedRef.current) return;
     try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem("pendingInvite") : null;
+      const raw = typeof window !== "undefined" ? readStashedInvite() : null;
       if (!raw) return;
-      localStorage.removeItem("pendingInvite");
+      consumePendingInviteFromLocalStorage();
       bootedRef.current = true;
       const parsed = JSON.parse(raw);
       const { journeyType, prefilledData, employee } = parsed;
-      // Merge HRMS prefilledData with employee so HRMS fields flow into the journey
-      const merged = prefilledData
-        ? { ...(employee || {}), ...prefilledData }
-        : parsed.prefilled || {};
-      // ETB-NK: existing customers with KYC are redirected to AU's netbanking portal
-      if (merged.redirectToBankSite) {
-        setRedirectToBankSite(true);
-        return;
-      }
-      if (journeyType) startJourney(journeyType, merged);
+      const merged = {
+        ...(prefilledData || {}),
+      };
+      delete (merged as { redirectToBankSite?: boolean }).redirectToBankSite;
+      const withEmployee = employee
+        ? { ...(employee || {}), ...merged, employeeId: employee.id || merged.employeeId }
+        : merged;
+      if (journeyType) startJourney(journeyType, withEmployee);
     } catch { /* ignore */ }
   }, [startJourney]);
 
@@ -70,15 +57,6 @@ function HomeContent() {
     : journeySteps[currentStepIndex]
       ? STEP_COMPONENTS[journeySteps[currentStepIndex].id]
       : null;
-
-  // Redirect takes priority over everything — must be before showDashboard check.
-  if (redirectToBankSite) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <p className="text-sm text-slate-600">Redirecting to AU Bank&apos;s site</p>
-      </div>
-    );
-  }
 
   if (showDashboard) {
     return <Dashboard />;

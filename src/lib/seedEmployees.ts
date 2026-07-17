@@ -18,6 +18,19 @@ const LAST_NAMES = [
 ];
 
 const DEPARTMENTS = ["Technology", "Finance", "Operations", "Marketing", "Human Resources", "Sales", "Design", "Analytics", "Legal", "Quality"];
+/** Weighted designation pool — rarer senior titles appear less often so the pie has a clear dominant slice. */
+const DESIGNATION_WEIGHTED: string[] = [
+  ...Array(28).fill("Specialist"),
+  ...Array(22).fill("Senior Specialist"),
+  ...Array(18).fill("Lead Consultant"),
+  ...Array(16).fill("Principal Consultant"),
+  ...Array(14).fill("Chief Manager"),
+  ...Array(12).fill("Head of Department"),
+  ...Array(10).fill("Vice President"),
+  ...Array(8).fill("Senior Vice President"),
+  ...Array(6).fill("Executive Director"),
+  ...Array(5).fill("Director"),
+];
 const GRADES = ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5", "Level 6", "Level 7", "Level 8"];
 const CITIES: { city: string; state: string }[] = [
   { city: "Bangalore", state: "KARNATAKA" }, { city: "Mumbai", state: "MAHARASHTRA" },
@@ -122,7 +135,7 @@ export function getSeedEmployees(): SeedEmployee[] {
         dateOfJoining,
         employmentType: "Permanent",
         gender: i % 2 === 0 ? "Male" : "Female",
-        designation: `${dept} Role`,
+        designation: randomChoice(DESIGNATION_WEIGHTED, seed + 11),
         department: dept,
         grade,
         costCenter: `${dept.slice(0, 3)}-${city.slice(0, 3)}`,

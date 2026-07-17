@@ -266,6 +266,11 @@ export function openEmployeeLoanJourneyInNewTab(
 
     try {
       localStorage.setItem("pendingInvite", JSON.stringify(inviteData));
+      try {
+        sessionStorage.setItem("activeSalaryInvite", JSON.stringify(inviteData));
+      } catch {
+        /* ignore */
+      }
       window.open(`/journey/${loanType}`, "_blank");
     } catch {
       window.open(`/journey/${loanType}`, "_blank");

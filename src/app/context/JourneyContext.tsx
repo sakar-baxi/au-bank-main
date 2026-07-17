@@ -11,6 +11,7 @@ import {
   loanJourneyBundleKey,
   salaryJourneyBundleKey,
 } from "@/lib/employeeJourneyHub";
+import { readStashedInvite } from "@/lib/pendingInvite";
 
 
 // --- 1. Types ---
@@ -175,16 +176,16 @@ const getInitialStepsForJourney = (
       ];
       break;
     default:
-      // Default to personal-loan if anything else is requested
+      // Default to NTB salary-account opening (this app's primary journey)
       stepIds = [
-        makeJourneyStepId("personal-loan", "verifyDetails"),
-        makeJourneyStepId("personal-loan", "bureauConsent"),
-        makeJourneyStepId("personal-loan", "selectPlan"),
-        makeJourneyStepId("personal-loan", "kycVerification"),
-        makeJourneyStepId("personal-loan", "disbursalAccount"),
-        makeJourneyStepId("personal-loan", "enachSetup"),
-        makeJourneyStepId("personal-loan", "submitApplication"),
-        makeJourneyStepId("personal-loan", "complete"),
+        makeJourneyStepId("ntb", "welcome"),
+        makeJourneyStepId("ntb", "kycChoice"),
+        makeJourneyStepId("ntb", "ekycHandler"),
+        makeJourneyStepId("ntb", "profileDetails"),
+        makeJourneyStepId("ntb", "incomeAndNominee"),
+        makeJourneyStepId("ntb", "reviewApplication"),
+        makeJourneyStepId("ntb", "videoKyc"),
+        makeJourneyStepId("ntb", "complete"),
       ];
       break;
   }
@@ -291,6 +292,7 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
     ifscCode: "IDFB0040101",
     branchName: "Mumbai Main",
     aadhaarNumber: "",
+    pan: "ABCDE1234F",
     // AU salary account fields
     employeeId: "EMP001234",
     companyName: "Corporate India Ltd",
@@ -480,18 +482,18 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
       localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}stepHistory`);
     }
     _setUserType("ntb");
-    _setJourneyType("personal-loan");
+    _setJourneyType(null);
     _setFormData({});
     setPrefilledData({});
     setBaselineData({});
     setChangedFields([]);
     _setStepHistory([]);
-    const newSteps = getInitialStepsForJourney("personal-loan", journeyConfig);
-    _setJourneySteps(newSteps);
+    _setJourneySteps([]);
     _setCurrentStepIndex(0);
     setBranchComponent(null); // Reset branch
     setBottomBarContent(null);
-  }, [journeyConfig, setBranchComponent]);
+    setShowDashboard(true);
+  }, [setBranchComponent]);
 
   // --- Inactivity Timer Logic ---
   const resetInactivityTimer = useCallback(() => {
@@ -515,15 +517,19 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        // If opened via RM Invite or specifically for personal-loan, do not restore any saved session; let page.tsx start the journey
-        const pendingInvite = localStorage.getItem('pendingInvite');
-        const plLikeMatch = window.location.pathname.match(/\/journey\/(personal-loan|auto-loan|education-loan)/);
-        const plLikeType = (plLikeMatch?.[1] || "") as JourneyType | undefined;
-        
-        if (pendingInvite || plLikeType) {
-          if (plLikeType && ["personal-loan", "auto-loan", "education-loan"].includes(plLikeType)) {
-            _setJourneyType(plLikeType);
-            _setJourneySteps(getInitialStepsForJourney(plLikeType, journeyConfig));
+        // If opened via RM Invite or an explicit journey URL, do not restore a saved session
+        // (especially a stale personal-loan session). Let the invite page start the journey.
+        const pendingInvite = readStashedInvite();
+        const journeyPathMatch = window.location.pathname.match(
+          /\/journey\/(personal-loan|auto-loan|education-loan|address-verification|ntb|ntb-conversion|etb-nk|etb)(?:\/|$)/
+        );
+        const pathJourneyType = (journeyPathMatch?.[1] || "") as JourneyType | undefined;
+
+        if (pendingInvite || pathJourneyType) {
+          if (pathJourneyType) {
+            _setJourneyType(pathJourneyType);
+            _setJourneySteps(getInitialStepsForJourney(pathJourneyType, journeyConfig));
+            setShowDashboard(false);
           }
           setIsInitialized(true);
           return;
@@ -681,12 +687,13 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
             resetJourney();
           }
         } else {
-          // If no saved session, ensure we are in a clean Personal Loan state
-          _setJourneyType("personal-loan");
-          _setJourneySteps(getInitialStepsForJourney("personal-loan", journeyConfig));
+          // No saved session — stay on dashboard until an explicit journey starts
+          _setJourneyType(null);
+          _setJourneySteps([]);
           setPrefilledData({});
           setBaselineData({});
           setChangedFields([]);
+          setShowDashboard(true);
         }
       } catch (error) {
         resetJourney();
@@ -713,10 +720,15 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
     if (!currentStep) return;
     const isComplete = currentStep.id.endsWith(":complete");
     const lastUpdated = new Date().toISOString();
+    const salaryJourneys: JourneyType[] = ["ntb", "ntb-conversion", "etb-nk", "etb"];
+    const loanJourneys = ["personal-loan", "auto-loan", "education-loan"] as const;
+    const isSalaryJourney = salaryJourneys.includes(journeyType);
+    const stepTitle =
+      isSalaryJourney && isComplete ? "Account Opened" : currentStep.title;
     const statusEntry: Record<string, any> = {
       status: isComplete ? "completed" : "in_progress",
       currentStepIndex,
-      currentStepTitle: currentStep.title,
+      currentStepTitle: stepTitle,
       currentStepId: currentStep.id,
       journeyType,
       lastUpdated,
@@ -731,17 +743,16 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
       income: formData.income,
       maritalStatus: formData.maritalStatus,
     };
-    if (isComplete) {
+    if (isComplete && isSalaryJourney) {
       statusEntry.bankName = "AU Bank";
       statusEntry.accountNumber = "1" + empId.replace(/\D/g, "").padStart(10, "0") + "82";
       statusEntry.ifscCode = "IDFB0040101";
     }
-    localStorage.setItem(`employeeJourneyStatus_${empId}`, JSON.stringify(statusEntry));
 
-    const salaryJourneys: JourneyType[] = ["ntb", "ntb-conversion", "etb-nk", "etb"];
-    const loanJourneys = ["personal-loan", "auto-loan", "education-loan"] as const;
-
-    if (salaryJourneys.includes(journeyType)) {
+    // RM Corporates → Employee Directory tracks salary-account opening only.
+    // Loan progress is stored separately so it cannot overwrite salary journey status.
+    if (isSalaryJourney) {
+      localStorage.setItem(`employeeJourneyStatus_${empId}`, JSON.stringify(statusEntry));
       localStorage.setItem(
         salaryJourneyBundleKey(empId),
         JSON.stringify({
@@ -812,7 +823,8 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
       "address-verification",
       "ntb", "ntb-conversion", "etb-nk", "etb",
     ];
-    const finalType = validTypes.includes(type) ? type : "personal-loan";
+    // Unknown types fall back to NTB salary-account opening (primary product journey)
+    const finalType = validTypes.includes(type) ? type : "ntb";
 
     const isLoanLikeJourney = (t: JourneyType) =>
       t === "personal-loan" || t === "auto-loan" || t === "education-loan";
@@ -914,15 +926,19 @@ export const JourneyProvider = ({ children }: { children: ReactNode }) => {
     setChangedFields([]);
     setPrefilledData(safePrefilled);
     if (typeof window !== 'undefined') {
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}userType`, "ntb");
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}journeyType`, finalType);
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}stepIndex`, (startIndex >= 0 ? startIndex : 0).toString());
       if (empId) {
         localStorage.setItem(`${LOCAL_STORAGE_PREFIX}stepIndex_${empId}`, (startIndex >= 0 ? startIndex : 0).toString());
       }
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}journeySteps`, JSON.stringify(newSteps));
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}formData`, JSON.stringify(merged));
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}baselineData`, JSON.stringify(merged));
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}changedFields`, JSON.stringify([]));
       localStorage.setItem(`${LOCAL_STORAGE_PREFIX}prefilledData`, JSON.stringify(prefilled || {}));
+      localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}branchStepId`);
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}stepHistory`, JSON.stringify([]));
     }
     setShowDashboard(false);
     setError(null);

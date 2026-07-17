@@ -91,15 +91,14 @@ export default function StepWelcome() {
   }, []);
 
   // Sync prefilled formData into local state when it changes (e.g. from invite/demo)
-  // Welcome page: only name and mobileNumber are prefilled; aadhaar never prefilled
   useEffect(() => {
     if (otpSent) return;
-    if (formData.name != null) setName(String(formData.name));
-    if (formData.mobileNumber != null) setMobileNumber(String(formData.mobileNumber));
-    if (formData.dob != null) setDob(String(formData.dob));
-    if (formData.email != null) setEmail(String(formData.email));
-    if (formData.pan != null) setPan(String(formData.pan));
-    if (formData.aadhaarNumber != null) setAadhaarNumber(String(formData.aadhaarNumber));
+    if (formData.name) setName(String(formData.name));
+    if (formData.mobileNumber) setMobileNumber(String(formData.mobileNumber));
+    if (formData.dob) setDob(String(formData.dob));
+    if (formData.email) setEmail(String(formData.email));
+    if (formData.pan) setPan(String(formData.pan).toUpperCase());
+    if (formData.aadhaarNumber) setAadhaarNumber(String(formData.aadhaarNumber));
     if (formData.ekycUidaiConsent === true) setConsent(true);
   }, [formData.name, formData.mobileNumber, formData.dob, formData.email, formData.pan, formData.aadhaarNumber, formData.ekycUidaiConsent, otpSent]);
 

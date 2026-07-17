@@ -26,7 +26,6 @@ import {
     ChevronRight,
     ChevronDown,
     ChevronsUpDown,
-    Package,
     HelpCircle,
     ShieldCheck,
     PiggyBank,
@@ -1178,43 +1177,86 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                         ? (list.reduce((s, e) => s + parseInt(String((e as Record<string, unknown>).income || 0), 10), 0) / list.length / 100000).toFixed(1)
                         : "0";
 
-                    /** Salary-account onboarding fit from HRMS profile only (tenure, salary vs cohort, age, grade). */
-                    type FitSegment = "high_fit" | "standard_fit" | "needs_follow_up";
-                    const getSalaryAccountFitSegment = (e: TEmployee): FitSegment => {
-                        const tenureMonths = getTenureMonths(e);
-                        const salary = parseInt(String((e as Record<string, unknown>).income || 0), 10) || 0;
-                        const medianSalary = list.length
-                            ? list.reduce((s, emp) => s + parseInt(String((emp as Record<string, unknown>).income || 0), 10), 0) / list.length
-                            : 0;
-                        const age = getAge(e);
-                        const grade = (e as Record<string, unknown>).grade as string | undefined;
-                        const gradeBand = grade ? parseInt(String(grade).replace(/\D/g, ""), 10) : NaN;
-                        if (tenureMonths < 12 || salary === 0) return "needs_follow_up";
-                        const salaryOk = medianSalary > 0 ? salary >= medianSalary * 0.85 : true;
-                        const tenureOk = tenureMonths >= 24;
-                        const ageOk = age != null && age >= 25 && age <= 55;
-                        const seniorGrade = !Number.isNaN(gradeBand) && gradeBand >= 5;
-                        if (tenureOk && salaryOk && ageOk) return "high_fit";
-                        if (seniorGrade && tenureMonths >= 18 && salaryOk) return "high_fit";
-                        if (tenureMonths >= 12 && salaryOk) return "standard_fit";
-                        return "needs_follow_up";
-                    };
+                    const journeyMix = [
+                        { key: "ntb", label: "NTB", match: (j: string) => j === "ntb" || j === "ntb-no-parents" },
+                        { key: "etb-nk", label: "ETB with KYC", match: (j: string) => j === "etb-nk" },
+                        { key: "etb", label: "ETB Auto Conversion", match: (j: string) => j === "etb" },
+                    ].map((row) => {
+                        const count = list.filter((e) => row.match(String(e.journey || ""))).length;
+                        const pct = list.length ? ((count / list.length) * 100).toFixed(1) : "0.0";
+                        return { ...row, count, pct };
+                    });
 
-                    const fitLabels: Record<FitSegment, string> = {
-                        high_fit: "High-fit",
-                        standard_fit: "Standard-fit",
-                        needs_follow_up: "Needs follow-up",
-                    };
-                    const fitDistribution = (["high_fit", "standard_fit", "needs_follow_up"] as const).map((seg) => ({
-                        key: seg,
-                        label: fitLabels[seg],
-                        count: list.filter((e) => getSalaryAccountFitSegment(e) === seg).length,
+                    const DESIGNATION_ORDER = [
+                        "Specialist",
+                        "Senior Specialist",
+                        "Lead Consultant",
+                        "Principal Consultant",
+                        "Chief Manager",
+                        "Head of Department",
+                        "Vice President",
+                        "Senior Vice President",
+                        "Executive Director",
+                        "Director",
+                    ];
+                    const designationCountMap = list.reduce((acc, e) => {
+                        const d = String((e as Record<string, unknown>).designation || "Other").trim() || "Other";
+                        acc.set(d, (acc.get(d) || 0) + 1);
+                        return acc;
+                    }, new Map<string, number>());
+                    const designationCounts = [
+                        ...DESIGNATION_ORDER
+                            .filter((label) => (designationCountMap.get(label) || 0) > 0)
+                            .map((label) => ({ label, count: designationCountMap.get(label) || 0 })),
+                        ...Array.from(designationCountMap.entries())
+                            .filter(([label]) => !DESIGNATION_ORDER.includes(label))
+                            .map(([label, count]) => ({ label, count }))
+                            .sort((a, b) => b.count - a.count),
+                    ];
+
+                    // Palette aligned with SBI reference: dominant primary first, then distinct accents
+                    const PIE_COLORS = [
+                        "#42265e", "#7c3aed", "#db2777", "#c84417", "#0d9488",
+                        "#ec4899", "#ea580c", "#059669", "#f59e0b", "#38bdf8",
+                    ];
+                    const designationPie = designationCounts.map((row, i) => ({
+                        ...row,
+                        color: PIE_COLORS[i % PIE_COLORS.length],
+                        pct: list.length ? Math.round((row.count / list.length) * 100) : 0,
                     }));
-
-                    const countHighFit = fitDistribution.find((f) => f.key === "high_fit")?.count ?? 0;
-                    const countStandardFit = fitDistribution.find((f) => f.key === "standard_fit")?.count ?? 0;
-                    const countNeedsFollowUp = fitDistribution.find((f) => f.key === "needs_follow_up")?.count ?? 0;
-                    const activationReadyCount = countHighFit + countStandardFit;
+                    const pieTotal = designationPie.reduce((s, row) => s + row.count, 0) || 1;
+                    const pieSlices: { path: string; color: string; label: string }[] = [];
+                    {
+                        let angle = -Math.PI / 2; // start at top
+                        const cx = 80;
+                        const cy = 80;
+                        const r = 78;
+                        designationPie.forEach((slice) => {
+                            const sweep = (slice.count / pieTotal) * Math.PI * 2;
+                            const start = angle;
+                            const end = angle + sweep;
+                            const x1 = cx + r * Math.cos(start);
+                            const y1 = cy + r * Math.sin(start);
+                            const x2 = cx + r * Math.cos(end);
+                            const y2 = cy + r * Math.sin(end);
+                            const large = sweep > Math.PI ? 1 : 0;
+                            // Full circle edge case: use two arcs
+                            if (slice.count === pieTotal) {
+                                pieSlices.push({
+                                    label: slice.label,
+                                    color: slice.color,
+                                    path: `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx} ${cy + r} A ${r} ${r} 0 1 1 ${cx} ${cy - r} Z`,
+                                });
+                            } else if (sweep > 0.001) {
+                                pieSlices.push({
+                                    label: slice.label,
+                                    color: slice.color,
+                                    path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`,
+                                });
+                            }
+                            angle = end;
+                        });
+                    }
                     const eligibleForInviteCount = Math.max(0, list.length - completedCount);
                     const yetToInviteCount = Math.max(0, list.length - completedCount - inProgressCount - invitedCount);
 
@@ -1228,19 +1270,19 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                     <p className="text-2xl font-bold text-emerald-600 mt-1">{completedCount}</p>
                                     <p className="text-[10px] text-[#9CA3AF] mt-1">Journey completed</p>
                                 </div>
-                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-dashboard-primary">
+                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-[#42265e]">
                                     <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">In-progress</p>
-                                    <p className="text-2xl font-bold text-dashboard-primary mt-1">{inProgressCount}</p>
+                                    <p className="text-2xl font-bold text-[#42265e] mt-1">{inProgressCount}</p>
                                     <p className="text-[10px] text-[#9CA3AF] mt-1">Applications started</p>
                                 </div>
-                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-amber-400">
+                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-[#c84417]">
                                     <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Invited</p>
-                                    <p className="text-2xl font-bold text-amber-600 mt-1">{invitedCount}</p>
+                                    <p className="text-2xl font-bold text-[#c84417] mt-1">{invitedCount}</p>
                                     <p className="text-[10px] text-[#9CA3AF] mt-1">Awaiting response</p>
                                 </div>
-                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-blue-500">
+                                <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-[#42265e]">
                                     <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Yet to invite</p>
-                                    <p className="text-2xl font-bold text-blue-600 mt-1">{yetToInviteCount}</p>
+                                    <p className="text-2xl font-bold text-[#42265e] mt-1">{yetToInviteCount}</p>
                                     <p className="text-[10px] text-[#9CA3AF] mt-1">Eligible for outreach</p>
                                 </div>
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm border-t-4 border-t-slate-400">
@@ -1250,56 +1292,27 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                 </div>
                             </div>
 
-                            {/* Salary account activation potential */}
-                            <div className="bg-white border border-[#E5E7EB] rounded-xl p-6 shadow-sm border-l-4 border-l-dashboard-primary">
+                            <div className="bg-white border border-[#E5E7EB] rounded-xl p-6 shadow-sm border-l-4 border-l-[#42265e]">
                                 <h3 className="text-base font-semibold text-[#111827] mb-1 flex items-center gap-2">
-                                    <Package className="w-5 h-5 text-dashboard-primary" /> Salary Account Activation Potential
+                                    <Clock className="w-5 h-5 text-[#42265e]" /> Salary account journey mix (demo)
                                 </h3>
-                                <p className="text-xs text-[#6B7280] mb-4">Estimated salary account activation opportunity from eligible employees. Segmented by salary range, tenure, grade, age group, and department.</p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                    <div className="bg-[#F9FAFB] rounded-lg p-4">
-                                        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Employees</p>
-                                        <p className="text-2xl font-bold text-[#111827] mt-0.5">{list.length.toLocaleString()}</p>
-                                        <p className="text-xs text-[#6B7280] mt-0.5">Eligible pool</p>
-                                    </div>
-                                    <div className="bg-[#F9FAFB] rounded-lg p-4">
-                                        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Total activation opportunity</p>
-                                        <p className="text-2xl font-bold text-dashboard-primary mt-0.5">{activationReadyCount.toLocaleString()}</p>
-                                        <p className="text-xs text-[#6B7280] mt-0.5">High-fit + standard-fit employees</p>
-                                    </div>
-                                    <div className="bg-[#F9FAFB] rounded-lg p-4">
-                                        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Avg. salary / employee</p>
-                                        <p className="text-2xl font-bold text-[#111827] mt-0.5">₹{avgSalaryL}L</p>
-                                        <p className="text-xs text-[#6B7280] mt-0.5">Salary account based</p>
-                                    </div>
-                                    <div className="bg-[#F9FAFB] rounded-lg p-4">
-                                        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Priority segment</p>
-                                        <p className="text-2xl font-bold text-emerald-700 mt-0.5">{countHighFit} ({list.length ? Math.round((countHighFit / list.length) * 100) : 0}%)</p>
-                                        <p className="text-xs text-[#6B7280] mt-0.5">High salary account fit</p>
-                                    </div>
-                                </div>
-                                <div className="border-t border-[#E5E7EB] pt-4">
-                                    <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Salary account fit segmentation</p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                                            <span className="text-sm font-medium text-emerald-800">High-fit employees</span>
-                                            <span className="text-sm font-semibold text-emerald-900">{countHighFit}</span>
+                                <p className="text-xs text-[#6B7280] mb-4">
+                                    Share of the cohort by mapped salary-account journey: NTB, ETB with KYC, and ETB auto conversion. Seed data assigns journeys in rotating thirds so the mix stays roughly even for demos.
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    {journeyMix.map((row) => (
+                                        <div key={row.key} className="bg-[#F9FAFB] rounded-lg p-4 border border-[#E5E7EB]">
+                                            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">{row.label}</p>
+                                            <p className="text-2xl font-bold text-[#111827] mt-1">{row.pct}%</p>
+                                            <p className="text-xs text-[#6B7280] mt-0.5">{row.count} employees</p>
                                         </div>
-                                        <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50 border border-amber-100">
-                                            <span className="text-sm font-medium text-amber-800">Standard-fit employees</span>
-                                            <span className="text-sm font-semibold text-amber-900">{countStandardFit}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-100 border border-slate-200">
-                                            <span className="text-sm font-medium text-slate-700">Needs follow-up</span>
-                                            <span className="text-sm font-semibold text-slate-800">{countNeedsFollowUp}</span>
-                                        </div>
-                                    </div>
+                                    ))}
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 shadow-sm">
-                                    <div className="flex items-center gap-2 text-[#6B7280] text-xs font-semibold uppercase tracking-wider"><TrendingUp className="w-4 h-4" /> Activation rate</div>
+                                    <div className="flex items-center gap-2 text-[#6B7280] text-xs font-semibold uppercase tracking-wider"><TrendingUp className="w-4 h-4 text-[#42265e]" /> Activation rate</div>
                                     <p className="text-2xl font-bold text-[#111827] mt-1">{completionRate}%</p>
                                     <p className="text-xs text-[#6B7280] mt-0.5">Employees with completed account opening</p>
                                 </div>
@@ -1319,6 +1332,7 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                     <p className="text-xs text-[#6B7280] mt-0.5">Annual salary of eligible pool</p>
                                 </div>
                             </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
                                     <h3 className="text-sm font-semibold text-[#111827] mb-4">Age brackets (25–30 years &amp; above)</h3>
@@ -1329,7 +1343,7 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                                 <div key={label} className="flex items-center gap-3">
                                                     <span className="text-sm font-medium text-[#374151] w-14">{label}</span>
                                                     <div className="flex-1 h-6 bg-[#F3F4F6] rounded-full overflow-hidden">
-                                                        <div className="h-full bg-dashboard-primary rounded-full transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+                                                        <div className="h-full bg-[#42265e] rounded-full transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
                                                     </div>
                                                     <span className="text-sm text-[#6B7280] w-16 text-right">{count} ({pct}%)</span>
                                                 </div>
@@ -1338,23 +1352,30 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                     </div>
                                 </div>
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
-                                    <h3 className="text-sm font-semibold text-[#111827] mb-4">Salary account fit distribution</h3>
-                                    <div className="space-y-3">
-                                        {fitDistribution.map(({ key, label, count }) => {
-                                            const pct = list.length ? Math.round((count / list.length) * 100) : 0;
-                                            return (
-                                                <div key={key} className="flex items-center gap-3">
-                                                    <span className="text-sm font-medium text-[#374151] min-w-[140px]">{label}</span>
-                                                    <div className="flex-1 h-6 bg-[#F3F4F6] rounded-full overflow-hidden">
-                                                        <div className="h-full bg-emerald-600 rounded-full transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
-                                                    </div>
-                                                    <span className="text-sm text-[#6B7280] w-16 text-right">{count} ({pct}%)</span>
+                                    <h3 className="text-sm font-semibold text-[#111827]">Salary account fit distribution by designation</h3>
+                                    <p className="text-xs text-[#6B7280] mt-0.5 mb-4">Share of the eligible pool by employee designation (demo cohort).</p>
+                                    <div className="flex flex-col sm:flex-row gap-5 items-center sm:items-start">
+                                        <svg viewBox="0 0 160 160" className="w-40 h-40 shrink-0 drop-shadow-sm" aria-hidden>
+                                            {pieSlices.map((slice) => (
+                                                <path key={slice.label} d={slice.path} fill={slice.color} stroke="#fff" strokeWidth="1.5" />
+                                            ))}
+                                        </svg>
+                                        <div className="flex-1 w-full space-y-1.5">
+                                            {designationPie.map((slice) => (
+                                                <div key={slice.label} className="flex items-center gap-2 text-sm">
+                                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: slice.color }} />
+                                                    <span className="flex-1 text-[#374151] truncate">{slice.label}</span>
+                                                    <span className="text-[#6B7280] tabular-nums shrink-0">{slice.count} ({slice.pct}%)</span>
                                                 </div>
-                                            );
-                                        })}
+                                            ))}
+                                            {designationPie.length === 0 && (
+                                                <p className="text-sm text-[#6B7280]">No designation data in this view.</p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm overflow-hidden">
                                     <h3 className="text-sm font-semibold text-[#111827] mb-4">Department-wise age split</h3>
@@ -1382,7 +1403,8 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                     </div>
                                 </div>
                                 <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
-                                    <h3 className="text-sm font-semibold text-[#111827] mb-4">Salary-wise split</h3>
+                                    <h3 className="text-sm font-semibold text-[#111827] mb-1">Salary-wise split</h3>
+                                    <p className="text-xs text-[#6B7280] mb-4">Bar length is share of the {list.length} employees in this view (seed cohort uses weighted bands—not a flat split).</p>
                                     <div className="space-y-3">
                                         {salarySplit.map(({ label, count }) => {
                                             const pct = list.length ? Math.round((count / list.length) * 100) : 0;
@@ -1390,7 +1412,7 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                                 <div key={label} className="flex items-center gap-3">
                                                     <span className="text-sm font-medium text-[#374151] min-w-[100px]">{label}</span>
                                                     <div className="flex-1 h-6 bg-[#F3F4F6] rounded-full overflow-hidden">
-                                                        <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+                                                        <div className="h-full bg-[#c84417] rounded-full transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
                                                     </div>
                                                     <span className="text-sm text-[#6B7280] w-16 text-right">{count} ({pct}%)</span>
                                                 </div>
@@ -1399,27 +1421,26 @@ export function DashboardPageContent<TEmployee extends Employee = Employee, TSta
                                     </div>
                                 </div>
                             </div>
+
                             <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
                                 <h3 className="text-sm font-semibold text-[#111827] mb-3">Salary account activation summary</h3>
-                                <ul className="text-sm text-[#6B7280] space-y-1 list-disc list-inside">
+                                <ul className="text-sm text-[#374151] space-y-1.5 list-disc list-inside">
                                     <li>Eligible pool: {list.length} employees synced for salary account onboarding</li>
                                     <li>Accounts opened: {completedCount} employees have completed the journey</li>
                                     <li>In-progress: {inProgressCount} employees have started the journey</li>
                                     <li>Invited: {invitedCount} employees are awaiting response</li>
                                     <li>Yet to be invited: {yetToInviteCount} employees are eligible for outreach</li>
-                                    <li>Priority segment: {countHighFit} employees show high salary account activation fit</li>
+                                    <li>
+                                        Journey mix (demo):{" "}
+                                        {journeyMix.map((row, i) => (
+                                            <span key={row.key}>
+                                                {i > 0 ? ", " : ""}
+                                                {row.label} {row.pct}% ({row.count})
+                                            </span>
+                                        ))}
+                                    </li>
                                 </ul>
                             </div>
-
-                                <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-                                    <div className="px-5 py-4 border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                                        <h2 className="text-sm font-semibold text-[#111827]">Engagement Overview</h2>
-                                        <p className="text-xs text-[#6B7280] mt-0.5">High-level insights into salary account onboarding progress and employee activation.</p>
-                                    </div>
-                                    <div className="p-6">
-                                        <p className="text-sm text-[#6B7280]">Select an employee from the directory to view detailed salary account journey progress and activation insights.</p>
-                                    </div>
-                                </div>
                         </div>
                     );
                 })() : (
