@@ -13,6 +13,7 @@ export interface Offer {
     highlight: string;
     gradient: string;
     applyLabel?: string;
+    category?: string;
 }
 
 interface PreApprovedOfferModalProps {
@@ -28,7 +29,7 @@ export function PreApprovedOfferModal({ offer, onClose }: PreApprovedOfferModalP
     if (!offer) return null;
 
     const Icon = offer.icon;
-    const isLoan = offer.id === "personal-loan" || offer.id === "home-loan";
+    const isLoan = offer.category === "loan" || offer.id.includes("loan");
 
     const handleApply = (e: React.FormEvent) => {
         e.preventDefault();

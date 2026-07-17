@@ -6,8 +6,6 @@ import { useBranding } from "@/app/context/BrandingContext";
 import {
   CheckCircle2,
   CreditCard,
-  Gift,
-  TrendingUp,
   ArrowRight,
   Home,
   Package,
@@ -19,6 +17,7 @@ import { cn } from "@/lib/utils";
 import StepCard from "@/app/components/layout/StepCard";
 import { PreApprovedOfferModal } from "@/app/components/shared/PreApprovedOfferModal";
 import { AgentBanner, JourneyTypeBadge } from "@/app/components/shared/JourneyChrome";
+import { AU_BANK_OFFERS, filterAuBankOffers, type AuBankOffer } from "@/lib/auBankOffers";
 
 export default function StepComplete() {
   const { formData, setBottomBarContent, journeyType, setShowDashboard, resetJourney } = useJourney();
@@ -44,23 +43,11 @@ export default function StepComplete() {
     }
   };
 
-  // Salary account cross-sell offers
-  const offers = [
-    { id: "credit-card", icon: CreditCard, title: "Millennia Credit Card", desc: "Pre-approved with ₹2.5L limit", highlight: "Pre-approved", gradient: "from-blue-500 to-indigo-600", applyLabel: "Apply for credit card" },
-    { id: "personal-loan", icon: TrendingUp, title: "Personal Loan", desc: "Instant disbursal up to ₹15L", highlight: "From 10.5% p.a.", gradient: "from-violet-500 to-purple-600", applyLabel: "Apply for loan" },
-    { id: "home-loan", icon: Home, title: "Home Loan Refinancing", desc: "Rates starting at 8.45% p.a.", highlight: "Low EMI", gradient: "from-amber-500 to-orange-600", applyLabel: "Apply for home loan" },
-    { id: "life-insurance", icon: Gift, title: "Secure Life Insurance", desc: "Cover up to ₹1 Crore", highlight: "Comprehensive cover", gradient: "from-emerald-500 to-teal-600", applyLabel: "Get insured" },
-    { id: "demat", icon: Package, title: "Demat Account", desc: "Zero AMC for first year", highlight: "Zero AMC", gradient: "from-rose-500 to-pink-600", applyLabel: "Open demat" },
-  ];
-  const [selectedOffer, setSelectedOffer] = useState<(typeof offers)[0] | null>(null);
+  const offers = AU_BANK_OFFERS;
+  const [selectedOffer, setSelectedOffer] = useState<AuBankOffer | null>(null);
   const [offerSearch, setOfferSearch] = useState("");
 
-  const filteredOffers = offerSearch.trim()
-    ? offers.filter((o) =>
-        o.title.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.id.toLowerCase().includes(offerSearch.toLowerCase())
-      )
-    : offers;
+  const filteredOffers = filterAuBankOffers(offerSearch, offers);
 
   const userName = formData.name?.split?.(" ")[0] || formData.fatherName?.split?.()[0] || "there";
 
@@ -179,10 +166,10 @@ export default function StepComplete() {
                   Pre-approved
                 </span>
               </div>
-              <p className="text-xs text-slate-600 mt-2">Apply for other services—type to search offers, then tap to apply.</p>
+              <p className="text-xs text-slate-600 mt-2">Explore AU Bank credit cards, premium accounts, and loans—type to search, then tap to apply.</p>
               <input
                 type="text"
-                placeholder="Type: credit card, personal loan, insurance..."
+                placeholder="Type: Zenith+, Personal Loan, Gold Loan, ivy..."
                 value={offerSearch}
                 onChange={(e) => setOfferSearch(e.target.value)}
                 className="mt-3 w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-500"
